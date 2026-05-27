@@ -11,13 +11,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Grant execute permission
-        run: chmod +x launcher/gradlew
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2'
 
       - name: Build Debug APK
-        run: |
-          cd launcher
-          ./gradlew assembleDebug
+        working-directory: launcher
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
