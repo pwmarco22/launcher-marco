@@ -31,18 +31,13 @@ class AppDrawerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Make status bar transparent
         window.setFlags(
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
         )
-
         binding = ActivityAppDrawerBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
         prefs = LauncherPreferences(this)
-
         setupRecyclerView()
         setupSearch()
         setupClose()
@@ -53,14 +48,11 @@ class AppDrawerActivity : AppCompatActivity() {
         finishWithAnimation()
     }
 
-    // ── Setup ─────────────────────────────────────────────────────────────────
-
     private fun setupRecyclerView() {
         adapter = AppDrawerAdapter(
             onAppClick = { app -> launchApp(app) },
             onAppLongClick = { app, view -> showAppMenu(app, view) }
         )
-
         binding.appGrid.apply {
             layoutManager = GridLayoutManager(this@AppDrawerActivity, 4)
             adapter = this@AppDrawerActivity.adapter
@@ -83,15 +75,10 @@ class AppDrawerActivity : AppCompatActivity() {
         binding.backdropDimmer.setOnClickListener { finishWithAnimation() }
     }
 
-    // ── App Loading ───────────────────────────────────────────────────────────
-
     private fun loadApps() {
         binding.progressBar.visibility = View.VISIBLE
-
         activityScope.launch {
-            val apps = withContext(Dispatchers.IO) {
-                queryInstalledApps()
-            }
+            val apps = withContext(Dispatchers.IO) { queryInstalledApps() }
             allApps.clear()
             allApps.addAll(apps)
             adapter.submitList(apps)
@@ -100,13 +87,16 @@ class AppDrawerActivity : AppCompatActivity() {
     }
 
     private fun queryInstalledApps(): List<AppInfo> {
-        val pm: PackageManager = packageManager
+        val pm = packageManager
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
-
-        val resolveInfoList: List<ResolveInfo> = pm.queryIntentActivities(intent, 0)
-
+        val flags = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            PackageManager.MATCH_ALL
+        } else {
+            0
+        }
+        val resolveInfoList: List<ResolveInfo> = pm.queryIntentActivities(intent, flags)
         return resolveInfoList
             .map { ri ->
                 AppInfo(
@@ -120,17 +110,11 @@ class AppDrawerActivity : AppCompatActivity() {
     }
 
     private fun filterApps(query: String) {
-        val filtered = if (query.isBlank()) {
-            allApps
-        } else {
-            allApps.filter { it.label.contains(query, ignoreCase = true) }
-        }
+        val filtered = if (query.isBlank()) allApps
+        else allApps.filter { it.label.contains(query, ignoreCase = true) }
         adapter.submitList(filtered.toList())
-
         binding.emptyState.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
     }
-
-    // ── App Actions ───────────────────────────────────────────────────────────
 
     private fun launchApp(app: AppInfo) {
         try {
@@ -155,8 +139,7 @@ class AppDrawerActivity : AppCompatActivity() {
                     1 -> uninstallApp(app)
                     2 -> openAppInfo(app)
                 }
-            }
-            .show()
+            }.show()
     }
 
     private fun addToDock(app: AppInfo) {
@@ -166,7 +149,7 @@ class AppDrawerActivity : AppCompatActivity() {
             prefs.saveDockApps(current)
             Toast.makeText(this, "${app.label} added to dock", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "${app.label} is already in dock", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Already in dock", Toast.LENGTH_SHORT).show()
         }
     }
 
