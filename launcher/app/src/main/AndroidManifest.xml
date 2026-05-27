@@ -3,7 +3,6 @@
 
     <uses-permission android:name="android.permission.BIND_APPWIDGET" />
     <uses-permission android:name="android.permission.APPWIDGET_PROVIDER" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
@@ -15,44 +14,32 @@
         android:theme="@style/Theme.MarcoLauncher"
         android:supportsRtl="true">
 
-        <!-- ── Home Screen Activity ── -->
-        <activity
-            android:name=".HomeActivity"
-            android:exported="true"
-            android:launchMode="singleTask"
-            android:stateNotNeeded="true"
+        <activity android:name=".HomeActivity" android:exported="true"
+            android:launchMode="singleTask" android:stateNotNeeded="true"
             android:windowSoftInputMode="adjustPan">
             <intent-filter android:priority="1">
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.MONKEY" />
             </intent-filter>
         </activity>
 
-        <!-- ── App Drawer Activity ── -->
-        <activity
-            android:name=".AppDrawerActivity"
-            android:exported="false"
+        <activity android:name=".AppDrawerActivity" android:exported="false"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.MarcoLauncher.Drawer" />
 
-        <!-- ── Widget Picker Activity ── -->
-        <activity
-            android:name=".WidgetPickerActivity"
-            android:exported="false"
+        <activity android:name=".WidgetPickerActivity" android:exported="false"
             android:theme="@style/Theme.MarcoLauncher.Drawer" />
 
-        <!-- ── Boot Receiver ── -->
-        <receiver
-            android:name=".receiver.BootReceiver"
-            android:exported="true">
+        <activity android:name=".SettingsActivity" android:exported="false"
+            android:theme="@style/Theme.MarcoLauncher" />
+
+        <receiver android:name=".receiver.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
     </application>
-
 </manifest>
