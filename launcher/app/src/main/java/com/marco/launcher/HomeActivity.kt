@@ -12,9 +12,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.AnimationUtils
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -39,17 +42,22 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var prefs: LauncherPreferences
     private lateinit var dockAdapter: DockAdapter
     private lateinit var gestureDetector: GestureDetector
-
     private val dockApps = mutableListOf<AppInfo>()
+    private val handler = Handler(Looper.getMainLooper())
 
-    // ── Package change receiver ───────────────────────────────────────────────
+    // Animated wallpaper colors
+    private val wallpaperColors = listOf(
+        intArrayOf(0xFF0f0c29.toInt(), 0xFF302b63.toInt(), 0xFF24243e.toInt()),
+        intArrayOf(0xFF1a1a2e.toInt(), 0xFF16213e.toInt(), 0xFF0f3460.toInt()),
+        intArrayOf(0xFF2d1b69.toInt(), 0xFF11998e.toInt(), 0xFF38ef7d.toInt()),
+        intArrayOf(0xFF360033.toInt(), 0xFF0b8793.toInt(), 0xFF360033.toInt()),
+        intArrayOf(0xFF000428.toInt(), 0xFF004e92.toInt(), 0xFF000428.toInt())
+    )
+    private var colorIndex = 0
+
     private val packageReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            loadDockApps()
-        }
+        override fun onReceive(context: Context, intent: Intent) { loadDockApps() }
     }
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,11 +70,12 @@ class HomeActivity : AppCompatActivity() {
 
         setupGestureDetector()
         setupDock()
-        setupClockDisplay()
         setupFab()
+        setupMarcoWatermark()
+        startLiveWallpaper()
         loadSavedWidgets()
         loadDockApps()
-        setWallpaperBackground()
+        animateHomeEntrance()
     }
 
     override fun onStart() {
@@ -84,48 +93,85 @@ class HomeActivity : AppCompatActivity() {
         super.onStop()
         appWidgetHost.stopListening()
         unregisterReceiver(packageReceiver)
+        handler.removeCallbacksAndMessages(null)
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    // ── Animated Entrance ─────────────────────────────────────────────────────
+    private fun animateHomeEntrance() {
+        binding.clockContainer.alpha = 0f
+        binding.clockContainer.translationY = -60f
+        binding.clockContainer.animate()
+            .alpha(1f).translationY(0f).setDuration(800)
+            .setStartDelay(100).start()
+
+        binding.dockCard.alpha = 0f
+        binding.dockCard.translationY = 80f
+        binding.dockCard.animate()
+            .alpha(1f).translationY(0f).setDuration(700)
+            .setStartDelay(300).start()
+
+        binding.marcoWatermark.alpha = 0f
+        binding.marcoWatermark.animate()
+            .alpha(1f).setDuration(1200)
+            .setStartDelay(600).start()
     }
 
-    // ── Setup ─────────────────────────────────────────────────────────────────
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupGestureDetector() {
-        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            private val SWIPE_THRESHOLD = 100
-            private val SWIPE_VELOCITY_THRESHOLD = 100
-
-            override fun onFling(
-                e1: MotionEvent?,
-                e2: MotionEvent,
-                velocityX: Float,
-                velocityY: Float
-            ): Boolean {
-                val diffY = (e2.y - (e1?.y ?: e2.y))
-                if (abs(diffY) > SWIPE_THRESHOLD &&
-                    abs(velocityY) > SWIPE_VELOCITY_THRESHOLD &&
-                    diffY < 0
-                ) {
-                    openAppDrawer()
-                    return true
-                }
-                return false
-            }
-
-            override fun onLongPress(e: MotionEvent) {
-                showHomeContextMenu()
-            }
-        })
-
-        binding.root.setOnTouchListener { _, event ->
-            gestureDetector.onTouchEvent(event)
-            false
+    // ── Live Wallpaper Effect ─────────────────────────────────────────────────
+    private fun startLiveWallpaper() {
+        val wallpaperPref = prefs.loadWallpaperUri()
+        if (wallpaperPref != null && wallpaperPref.startsWith("live_")) {
+            animateGradientWallpaper()
+        } else {
+            setStaticWallpaper()
         }
     }
 
+    private fun animateGradientWallpaper() {
+        val runnable = object : Runnable {
+            override fun run() {
+                colorIndex = (colorIndex + 1) % wallpaperColors.size
+                binding.wallpaperBackground.animate()
+                    .setDuration(3000).withEndAction { run() }.start()
+                handler.postDelayed(this, 3000)
+            }
+        }
+        handler.post(runnable)
+    }
+
+    private fun setStaticWallpaper() {
+        try {
+            val wm = WallpaperManager.getInstance(this)
+            val drawable = wm.drawable
+            if (drawable != null) binding.wallpaperBackground.background = drawable
+        } catch (e: Exception) { }
+    }
+
+    // ── MARCO Watermark ───────────────────────────────────────────────────────
+    private fun setupMarcoWatermark() {
+        binding.marcoWatermark.text = "MARCO"
+        binding.marcoWatermark.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        }
+    }
+
+    // ── Gesture ───────────────────────────────────────────────────────────────
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupGestureDetector() {
+        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, vX: Float, vY: Float): Boolean {
+                val diffY = e2.y - (e1?.y ?: e2.y)
+                if (abs(diffY) > 100 && abs(vY) > 100 && diffY < 0) {
+                    openAppDrawer(); return true
+                }
+                return false
+            }
+            override fun onLongPress(e: MotionEvent) { showHomeContextMenu() }
+        })
+        binding.root.setOnTouchListener { _, event -> gestureDetector.onTouchEvent(event); false }
+    }
+
+    // ── Dock ──────────────────────────────────────────────────────────────────
     private fun setupDock() {
         dockAdapter = DockAdapter(
             apps = dockApps,
@@ -133,17 +179,9 @@ class HomeActivity : AppCompatActivity() {
             onAppLongClick = { app, _ -> showAppContextMenu(app) }
         )
         binding.dockRecycler.apply {
-            layoutManager = LinearLayoutManager(
-                this@HomeActivity,
-                LinearLayoutManager.HORIZONTAL,
-                false
-            )
+            layoutManager = LinearLayoutManager(this@HomeActivity, LinearLayoutManager.HORIZONTAL, false)
             adapter = dockAdapter
         }
-    }
-
-    private fun setupClockDisplay() {
-        // Clock updates are handled by the XML TextClock widget automatically
     }
 
     private fun setupFab() {
@@ -152,114 +190,65 @@ class HomeActivity : AppCompatActivity() {
     }
 
     // ── App Loading ───────────────────────────────────────────────────────────
-
     private fun loadDockApps() {
         val savedPackages = prefs.loadDockApps()
         val pm = packageManager
-
         val loaded = savedPackages.mapNotNull { pkg ->
             try {
                 val intent = pm.getLaunchIntentForPackage(pkg) ?: return@mapNotNull null
                 val comp = intent.component ?: return@mapNotNull null
                 val info = pm.getActivityInfo(comp, 0)
-                AppInfo(
-                    packageName = pkg,
-                    activityName = comp.className,
-                    label = info.loadLabel(pm).toString(),
-                    icon = info.loadIcon(pm)
-                )
-            } catch (e: PackageManager.NameNotFoundException) {
-                null
-            }
+                AppInfo(pkg, comp.className, info.loadLabel(pm).toString(), info.loadIcon(pm))
+            } catch (e: Exception) { null }
         }
-
-        // If no dock apps saved, use defaults
-        if (loaded.isEmpty()) {
-            loadDefaultDockApps()
-        } else {
-            dockApps.clear()
-            dockApps.addAll(loaded)
-            dockAdapter.notifyDataSetChanged()
-        }
+        if (loaded.isEmpty()) loadDefaultDockApps()
+        else { dockApps.clear(); dockApps.addAll(loaded); dockAdapter.notifyDataSetChanged() }
     }
 
     private fun loadDefaultDockApps() {
-        val defaultPackages = listOf(
-            "com.android.dialer",
-            "com.android.contacts",
-            "com.android.messaging",
-            "com.android.chrome",
-            "com.android.settings"
-        )
+        val defaults = listOf("com.android.dialer", "com.android.settings", "com.android.chrome")
         val pm = packageManager
-        val loaded = defaultPackages.mapNotNull { pkg ->
+        val loaded = defaults.mapNotNull { pkg ->
             try {
                 val intent = pm.getLaunchIntentForPackage(pkg) ?: return@mapNotNull null
                 val comp = intent.component ?: return@mapNotNull null
                 val info = pm.getActivityInfo(comp, 0)
-                AppInfo(
-                    packageName = pkg,
-                    activityName = comp.className,
-                    label = info.loadLabel(pm).toString(),
-                    icon = info.loadIcon(pm)
-                )
-            } catch (e: Exception) {
-                null
-            }
+                AppInfo(pkg, comp.className, info.loadLabel(pm).toString(), info.loadIcon(pm))
+            } catch (e: Exception) { null }
         }
-        dockApps.clear()
-        dockApps.addAll(loaded)
-        dockAdapter.notifyDataSetChanged()
+        dockApps.clear(); dockApps.addAll(loaded); dockAdapter.notifyDataSetChanged()
     }
 
-    // ── Widget Host ───────────────────────────────────────────────────────────
-
+    // ── Widgets ───────────────────────────────────────────────────────────────
     private fun loadSavedWidgets() {
-        val ids = prefs.loadWidgetIds()
-        ids.forEach { widgetId ->
-            val providerInfo = appWidgetManager.getAppWidgetInfo(widgetId)
-            if (providerInfo != null) {
-                addWidgetToScreen(widgetId, providerInfo)
-            } else {
-                // Widget no longer valid, clean up
-                appWidgetHost.deleteAppWidgetId(widgetId)
-            }
+        prefs.loadWidgetIds().forEach { widgetId ->
+            val info = appWidgetManager.getAppWidgetInfo(widgetId)
+            if (info != null) addWidgetToScreen(widgetId, info)
+            else appWidgetHost.deleteAppWidgetId(widgetId)
         }
     }
 
-    private fun addWidgetToScreen(widgetId: Int, providerInfo: AppWidgetProviderInfo) {
-        val hostView: AppWidgetHostView = appWidgetHost.createView(this, widgetId, providerInfo)
-        hostView.setAppWidget(widgetId, providerInfo)
-
-        val minWidth = providerInfo.minWidth.coerceAtLeast(200)
-        val minHeight = providerInfo.minHeight.coerceAtLeast(100)
-
-        val params = FrameLayout.LayoutParams(minWidth, minHeight).apply {
-            topMargin = 16
-        }
-
+    private fun addWidgetToScreen(widgetId: Int, info: AppWidgetProviderInfo) {
+        val hostView: AppWidgetHostView = appWidgetHost.createView(this, widgetId, info)
+        hostView.setAppWidget(widgetId, info)
+        val params = FrameLayout.LayoutParams(
+            info.minWidth.coerceAtLeast(200), info.minHeight.coerceAtLeast(100)
+        ).apply { topMargin = 16 }
         binding.widgetContainer.addView(hostView, params)
         hostView.tag = widgetId
     }
 
     private fun removeWidget(widgetId: Int) {
-        val view = binding.widgetContainer.findViewWithTag<View>(widgetId)
-        if (view != null) {
-            binding.widgetContainer.removeView(view)
+        binding.widgetContainer.findViewWithTag<View>(widgetId)?.let {
+            binding.widgetContainer.removeView(it)
         }
         appWidgetHost.deleteAppWidgetId(widgetId)
-
-        // Update persisted list
         val current = prefs.loadWidgetIds().toMutableList()
-        current.remove(widgetId)
-        prefs.saveWidgetIds(current)
+        current.remove(widgetId); prefs.saveWidgetIds(current)
     }
 
-    // ── Widget Picker Flow ────────────────────────────────────────────────────
-
     private fun openWidgetPicker() {
-        val intent = Intent(this, WidgetPickerActivity::class.java)
-        startActivityForResult(intent, REQUEST_PICK_WIDGET)
+        startActivityForResult(Intent(this, WidgetPickerActivity::class.java), REQUEST_PICK_WIDGET)
         overridePendingTransition(R.anim.slide_up, 0)
     }
 
@@ -267,171 +256,107 @@ class HomeActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-
         when (requestCode) {
             REQUEST_PICK_WIDGET -> {
                 if (resultCode == RESULT_OK) {
-                    val providerInfo = data?.getParcelableExtra<AppWidgetProviderInfo>(
-                        WidgetPickerActivity.EXTRA_WIDGET_PROVIDER
-                    ) ?: return
-
+                    val info = data?.getParcelableExtra<AppWidgetProviderInfo>(
+                        WidgetPickerActivity.EXTRA_WIDGET_PROVIDER) ?: return
                     val widgetId = appWidgetHost.allocateAppWidgetId()
-                    val bound = appWidgetManager.bindAppWidgetIdIfAllowed(
-                        widgetId, providerInfo.provider
-                    )
-
-                    if (bound) {
-                        finishWidgetBind(widgetId, providerInfo)
-                    } else {
+                    val bound = appWidgetManager.bindAppWidgetIdIfAllowed(widgetId, info.provider)
+                    if (bound) finishWidgetBind(widgetId, info)
+                    else {
                         val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
                             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                            putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, providerInfo.provider)
+                            putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
                         }
                         @Suppress("DEPRECATION")
                         startActivityForResult(intent, REQUEST_BIND_WIDGET)
                     }
                 }
             }
-
             REQUEST_BIND_WIDGET -> {
-                val widgetId = data?.getIntExtra(
-                    AppWidgetManager.EXTRA_APPWIDGET_ID, -1
-                ) ?: -1
+                val widgetId = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
                 if (resultCode == RESULT_OK && widgetId != -1) {
                     val info = appWidgetManager.getAppWidgetInfo(widgetId)
                     if (info != null) finishWidgetBind(widgetId, info)
-                } else if (widgetId != -1) {
-                    appWidgetHost.deleteAppWidgetId(widgetId)
-                }
+                } else if (widgetId != -1) appWidgetHost.deleteAppWidgetId(widgetId)
             }
-
             REQUEST_CONFIGURE_WIDGET -> {
-                val widgetId = data?.getIntExtra(
-                    AppWidgetManager.EXTRA_APPWIDGET_ID, -1
-                ) ?: -1
+                val widgetId = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
                 if (resultCode == RESULT_OK && widgetId != -1) {
                     val info = appWidgetManager.getAppWidgetInfo(widgetId)
                     if (info != null) persistAndShowWidget(widgetId, info)
-                } else if (widgetId != -1) {
-                    appWidgetHost.deleteAppWidgetId(widgetId)
-                }
+                } else if (widgetId != -1) appWidgetHost.deleteAppWidgetId(widgetId)
             }
         }
     }
 
-    private fun finishWidgetBind(widgetId: Int, providerInfo: AppWidgetProviderInfo) {
-        if (providerInfo.configure != null) {
+    private fun finishWidgetBind(widgetId: Int, info: AppWidgetProviderInfo) {
+        if (info.configure != null) {
             val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
-                component = providerInfo.configure
+                component = info.configure
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             }
             @Suppress("DEPRECATION")
             startActivityForResult(intent, REQUEST_CONFIGURE_WIDGET)
-        } else {
-            persistAndShowWidget(widgetId, providerInfo)
-        }
+        } else persistAndShowWidget(widgetId, info)
     }
 
-    private fun persistAndShowWidget(widgetId: Int, providerInfo: AppWidgetProviderInfo) {
+    private fun persistAndShowWidget(widgetId: Int, info: AppWidgetProviderInfo) {
         val current = prefs.loadWidgetIds().toMutableList()
-        if (!current.contains(widgetId)) {
-            current.add(widgetId)
-            prefs.saveWidgetIds(current)
-        }
-        addWidgetToScreen(widgetId, providerInfo)
+        if (!current.contains(widgetId)) { current.add(widgetId); prefs.saveWidgetIds(current) }
+        addWidgetToScreen(widgetId, info)
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
-
     private fun openAppDrawer() {
-        val intent = Intent(this, AppDrawerActivity::class.java)
-        startActivity(intent)
+        startActivity(Intent(this, AppDrawerActivity::class.java))
         overridePendingTransition(R.anim.slide_up, 0)
     }
 
     private fun launchApp(app: AppInfo) {
         try {
-            val intent = Intent().apply {
+            startActivity(Intent().apply {
                 setClassName(app.packageName, app.activityName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-            }
-            startActivity(intent)
+            })
         } catch (e: Exception) {
             Toast.makeText(this, "Unable to launch ${app.label}", Toast.LENGTH_SHORT).show()
         }
     }
 
     // ── Context Menus ─────────────────────────────────────────────────────────
-
     private fun showAppContextMenu(app: AppInfo) {
-        val items = arrayOf("Remove from dock", "App info")
         android.app.AlertDialog.Builder(this, R.style.DarkDialog)
             .setTitle(app.label)
-            .setItems(items) { _, which ->
+            .setItems(arrayOf("Remove from dock", "App info")) { _, which ->
                 when (which) {
-                    0 -> removeFromDock(app)
-                    1 -> openAppInfo(app)
+                    0 -> { dockApps.remove(app); dockAdapter.notifyDataSetChanged()
+                        prefs.saveDockApps(dockApps.map { it.packageName }) }
+                    1 -> startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.parse("package:${app.packageName}") })
                 }
-            }
-            .show()
+            }.show()
     }
 
     private fun showHomeContextMenu() {
-        val widgetIds = prefs.loadWidgetIds()
-        val items = mutableListOf("Add widget", "Change wallpaper")
-
-        if (widgetIds.isNotEmpty()) {
-            items.add("Remove last widget")
-        }
-
+        val items = mutableListOf("Add widget", "Change wallpaper", "Settings")
+        if (prefs.loadWidgetIds().isNotEmpty()) items.add("Remove last widget")
         android.app.AlertDialog.Builder(this, R.style.DarkDialog)
-            .setTitle("Home Screen")
+            .setTitle("MARCO Launcher")
             .setItems(items.toTypedArray()) { _, which ->
                 when (items[which]) {
                     "Add widget" -> openWidgetPicker()
                     "Change wallpaper" -> pickWallpaper()
-                    "Remove last widget" -> {
-                        val lastId = widgetIds.last()
-                        removeWidget(lastId)
-                    }
+                    "Settings" -> startActivity(Intent(this, SettingsActivity::class.java))
+                    "Remove last widget" -> removeWidget(prefs.loadWidgetIds().last())
                 }
-            }
-            .show()
-    }
-
-    private fun removeFromDock(app: AppInfo) {
-        dockApps.remove(app)
-        dockAdapter.notifyDataSetChanged()
-        prefs.saveDockApps(dockApps.map { it.packageName })
-    }
-
-    private fun openAppInfo(app: AppInfo) {
-        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = android.net.Uri.parse("package:${app.packageName}")
-        }
-        startActivity(intent)
-    }
-
-    // ── Wallpaper ─────────────────────────────────────────────────────────────
-
-    private fun setWallpaperBackground() {
-        try {
-            val wallpaperManager = WallpaperManager.getInstance(this)
-            val drawable = wallpaperManager.drawable
-            if (drawable != null) {
-                binding.wallpaperBackground.background = drawable
-            }
-        } catch (e: Exception) {
-            // Permission not granted, keep default background
-        }
+            }.show()
     }
 
     private fun pickWallpaper() {
-        val intent = Intent(Intent.ACTION_SET_WALLPAPER)
-        startActivity(Intent.createChooser(intent, "Choose Wallpaper"))
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Choose Wallpaper"))
     }
 
-    override fun onBackPressed() {
-        // Do nothing on back press (launcher behavior)
-    }
+    override fun onBackPressed() { }
 }
